@@ -38,6 +38,8 @@ function Account() {
   };
 
   useEffect(() => {
+    let isMounted = true;
+
     const fetchUser = async () => {
       const token = localStorage.getItem('authToken');
       if (!token) {
@@ -46,24 +48,32 @@ function Account() {
       }
       try {
         const response = await executeFetch(token);
-        const userData = response.user;
-        setUser(userData);
-        const newFormData = {
-          firstName: userData.first_name || '',
-          lastName: userData.last_name || '',
-          phone: userData.phone || '',
-          dob: userData.dob || '',
-          address: userData.address || '',
-        };
-        setFormData(newFormData);
-        setInitialFormData(newFormData);
+        if (isMounted) {
+          const userData = response.user;
+          setUser(userData);
+          const newFormData = {
+            firstName: userData.first_name || '',
+            lastName: userData.last_name || '',
+            phone: userData.phone || '',
+            dob: userData.dob || '',
+            address: userData.address || '',
+          };
+          setFormData(newFormData);
+          setInitialFormData(newFormData);
+        }
       } catch {
-        localStorage.removeItem('authToken');
-        navigate('/login');
+        if (isMounted) {
+          localStorage.removeItem('authToken');
+          navigate('/login');
+        }
       }
     };
     fetchUser();
-  }, [navigate, executeFetch]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [navigate]);
 
   const handleSave = async () => {
     const token = localStorage.getItem('authToken');
