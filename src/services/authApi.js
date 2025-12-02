@@ -1,4 +1,4 @@
-const BASE_URL = 'http://inter-backend-pi.vercel.app';
+const BASE_URL = 'https://inter-backend-pi.vercel.app';
 
 export const authApi = {
   async sendCode(email) {
