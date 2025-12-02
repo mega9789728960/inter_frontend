@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../services/authApi';
+import { useFormValidation } from '../hooks/useFormValidation';
+import { useAsync } from '../hooks/useAsync';
+import { FormInput } from './FormInput';
+import { validateName } from '../utils/validators';
+
+const validators = {
+  firstName: validateName,
+  lastName: validateName,
+};
 
 function Account() {
   const navigate = useNavigate();
@@ -12,11 +21,21 @@ function Account() {
     dob: '',
     address: '',
   });
-  const [loading, setLoading] = useState(true);
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [touched, setTouched] = useState({});
   const [isEditing, setIsEditing] = useState(false);
+  const [initialFormData, setInitialFormData] = useState({ ...formData });
+
+  const { loading: fetchLoading, error: fetchError, execute: executeFetch, clearError: clearFetchError } = useAsync(authApi.getAccount);
+  const { loading: updateLoading, error: updateError, execute: executeUpdate, clearError: clearUpdateError } = useAsync(authApi.updateAccount);
+  const { touched, handleBlur, getFieldError, getFieldStatus, isFieldValid, resetTouched } = useFormValidation(validators);
+
+  const loading = fetchLoading;
+  const isSaving = updateLoading;
+  const error = fetchError || updateError;
+
+  const clearAllErrors = () => {
+    clearFetchError();
+    clearUpdateError();
+  };
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -26,45 +45,44 @@ function Account() {
         return;
       }
       try {
-        const response = await authApi.getAccount(token);
+        const response = await executeFetch(token);
         const userData = response.user;
         setUser(userData);
-        setFormData({
+        const newFormData = {
           firstName: userData.first_name || '',
           lastName: userData.last_name || '',
           phone: userData.phone || '',
           dob: userData.dob || '',
           address: userData.address || '',
-        });
-      } catch (err) {
-        setError(err.message);
+        };
+        setFormData(newFormData);
+        setInitialFormData(newFormData);
+      } catch {
         localStorage.removeItem('authToken');
         navigate('/login');
-      } finally {
-        setLoading(false);
       }
     };
     fetchUser();
-  }, [navigate]);
+  }, [navigate, executeFetch]);
 
   const handleSave = async () => {
     const token = localStorage.getItem('authToken');
-    setSaveLoading(true);
-    setError('');
     try {
-      const response = await authApi.updateAccount({
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        phone: formData.phone,
-        dob: formData.dob,
-        address: formData.address,
-      }, token);
+      const response = await executeUpdate(
+        {
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          phone: formData.phone,
+          dob: formData.dob,
+          address: formData.address,
+        },
+        token
+      );
       setUser(response.user);
       setIsEditing(false);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaveLoading(false);
+      resetTouched();
+    } catch {
+      return;
     }
   };
 
@@ -73,33 +91,43 @@ function Account() {
     navigate('/login');
   };
 
-  const handleBlur = (field) => {
-    setTouched({ ...touched, [field]: true });
+  const handleCancel = () => {
+    setFormData(initialFormData);
+    setIsEditing(false);
+    resetTouched();
   };
 
-  const isFirstNameValid = formData.firstName.trim().length >= 2;
-  const isLastNameValid = formData.lastName.trim().length >= 2;
+  const handleFieldChange = (field, value) => {
+    setFormData({ ...formData, [field]: value });
+  };
+
+  const isFirstNameValid = isFieldValid('firstName', formData.firstName);
+  const isLastNameValid = isFieldValid('lastName', formData.lastName);
   const allFieldsValid = isFirstNameValid && isLastNameValid;
 
-  if (loading) return (
-    <div className="d-flex justify-content-center align-items-center" style={{minHeight: '50vh'}}>
-      <div className="spinner-border text-primary" role="status">
-        <span className="visually-hidden">Loading...</span>
+  if (loading) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
+        <div className="spinner-border text-primary" role="status">
+          <span className="visually-hidden">Loading...</span>
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (!user) return (
-    <div className="d-flex justify-content-center align-items-center" style={{minHeight: '50vh'}}>
-      <div className="alert alert-danger">Failed to load user data</div>
-    </div>
-  );
+  if (!user) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '50vh' }}>
+        <div className="alert alert-danger">Failed to load user data</div>
+      </div>
+    );
+  }
 
   return (
     <div className="row justify-content-center">
       <div className="col-md-8 col-lg-6">
         <div className="card shadow-lg border-0">
-          <div className="card-header bg-primary text-white" style={{ backgroundColor: '#0d6efd' }}>
+          <div className="card-header bg-primary text-white">
             <div className="d-flex align-items-center gap-2">
               <span style={{ fontSize: '1.5rem' }}>👤</span>
               <h3 className="card-title mb-0">My Account</h3>
@@ -109,107 +137,87 @@ function Account() {
             {error && (
               <div className="alert alert-danger alert-dismissible fade show" role="alert">
                 <strong>Error!</strong> {error}
-                <button type="button" className="btn-close" onClick={() => setError('')}></button>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={clearAllErrors}
+                />
               </div>
             )}
             {isEditing ? (
               <form>
-                <div className="mb-3">
-                  <label htmlFor="firstName" className="form-label fw-bold">First Name</label>
-                  <input
-                    type="text"
-                    className={`form-control form-control-lg ${touched.firstName && !isFirstNameValid ? 'is-invalid' : ''} ${touched.firstName && isFirstNameValid ? 'is-valid' : ''}`}
-                    id="firstName"
-                    value={formData.firstName}
-                    onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
-                    onBlur={() => handleBlur('firstName')}
-                    placeholder="Enter your first name"
-                  />
-                  {touched.firstName && !isFirstNameValid && (
-                    <div className="invalid-feedback d-block">Name must be at least 2 characters</div>
-                  )}
-                </div>
-                <div className="mb-3">
-                  <label htmlFor="lastName" className="form-label fw-bold">Last Name</label>
-                  <input
-                    type="text"
-                    className={`form-control form-control-lg ${touched.lastName && !isLastNameValid ? 'is-invalid' : ''} ${touched.lastName && isLastNameValid ? 'is-valid' : ''}`}
-                    id="lastName"
-                    value={formData.lastName}
-                    onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                    onBlur={() => handleBlur('lastName')}
-                    placeholder="Enter your last name"
-                  />
-                  {touched.lastName && !isLastNameValid && (
-                    <div className="invalid-feedback d-block">Name must be at least 2 characters</div>
-                  )}
-                </div>
-                <div className="mb-3">
-                  <label htmlFor="email" className="form-label fw-bold">Email Address</label>
-                  <input
-                    type="email"
-                    className="form-control form-control-lg"
-                    id="email"
-                    value={user.email}
-                    disabled
-                    placeholder="Email cannot be changed"
-                  />
-                </div>
-                <div className="mb-3">
-                  <label htmlFor="phone" className="form-label fw-bold">Phone</label>
-                  <input
-                    type="tel"
-                    className="form-control form-control-lg"
-                    id="phone"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="Enter your phone number"
-                  />
-                </div>
-                <div className="mb-3">
-                  <label htmlFor="dob" className="form-label fw-bold">Date of Birth</label>
-                  <input
-                    type="date"
-                    className="form-control form-control-lg"
-                    id="dob"
-                    value={formData.dob}
-                    onChange={(e) => setFormData({ ...formData, dob: e.target.value })}
-                  />
-                </div>
-                <div className="mb-4">
-                  <label htmlFor="address" className="form-label fw-bold">Address</label>
-                  <input
-                    type="text"
-                    className="form-control form-control-lg"
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Enter your address"
-                  />
-                </div>
+                <FormInput
+                  id="firstName"
+                  type="text"
+                  label="First Name"
+                  value={formData.firstName}
+                  onChange={(e) => handleFieldChange('firstName', e.target.value)}
+                  onBlur={() => handleBlur('firstName')}
+                  placeholder="Enter your first name"
+                  error={getFieldError('firstName', formData.firstName)}
+                  status={getFieldStatus('firstName', formData.firstName)}
+                />
+
+                <FormInput
+                  id="lastName"
+                  type="text"
+                  label="Last Name"
+                  value={formData.lastName}
+                  onChange={(e) => handleFieldChange('lastName', e.target.value)}
+                  onBlur={() => handleBlur('lastName')}
+                  placeholder="Enter your last name"
+                  error={getFieldError('lastName', formData.lastName)}
+                  status={getFieldStatus('lastName', formData.lastName)}
+                />
+
+                <FormInput
+                  id="email"
+                  type="email"
+                  label="Email Address"
+                  value={user.email}
+                  disabled
+                  placeholder="Email cannot be changed"
+                />
+
+                <FormInput
+                  id="phone"
+                  type="tel"
+                  label="Phone"
+                  value={formData.phone}
+                  onChange={(e) => handleFieldChange('phone', e.target.value)}
+                  placeholder="Enter your phone number"
+                />
+
+                <FormInput
+                  id="dob"
+                  type="date"
+                  label="Date of Birth"
+                  value={formData.dob}
+                  onChange={(e) => handleFieldChange('dob', e.target.value)}
+                />
+
+                <FormInput
+                  id="address"
+                  type="text"
+                  label="Address"
+                  value={formData.address}
+                  onChange={(e) => handleFieldChange('address', e.target.value)}
+                  placeholder="Enter your address"
+                />
+
                 <div className="d-flex gap-2">
-                  <button 
-                    type="button" 
-                    className="btn btn-success btn-lg flex-fill fw-bold" 
+                  <button
+                    type="button"
+                    className="btn btn-success btn-lg flex-fill fw-bold"
                     onClick={handleSave}
-                    disabled={!allFieldsValid || saveLoading}
+                    disabled={!allFieldsValid || isSaving}
                   >
-                    {saveLoading ? 'Saving...' : '✓ Save Changes'}
+                    {isSaving ? 'Saving...' : '✓ Save Changes'}
                   </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-outline-secondary btn-lg" 
-                    onClick={() => {
-                      setIsEditing(false);
-                      setFormData({
-                        firstName: user.first_name || '',
-                        lastName: user.last_name || '',
-                        phone: user.phone || '',
-                        dob: user.dob || '',
-                        address: user.address || '',
-                      });
-                      setTouched({});
-                    }}
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary btn-lg"
+                    onClick={handleCancel}
                   >
                     Cancel
                   </button>
@@ -221,7 +229,9 @@ function Account() {
                   <div className="col-12">
                     <div className="p-3 bg-light rounded-2">
                       <small className="text-muted d-block mb-2">Full Name</small>
-                      <span className="h5 fw-bold">{user.first_name} {user.last_name}</span>
+                      <span className="h5 fw-bold">
+                        {user.first_name} {user.last_name}
+                      </span>
                     </div>
                   </div>
                   <div className="col-12">
@@ -256,15 +266,15 @@ function Account() {
                   )}
                 </div>
                 <div className="d-flex gap-2 flex-column flex-sm-row">
-                  <button 
-                    className="btn btn-primary btn-lg fw-bold" 
+                  <button
+                    className="btn btn-primary btn-lg fw-bold"
                     onClick={() => setIsEditing(true)}
                     style={{ minWidth: '150px' }}
                   >
                     ✏️ Edit Profile
                   </button>
-                  <button 
-                    className="btn btn-outline-danger btn-lg fw-bold" 
+                  <button
+                    className="btn btn-outline-danger btn-lg fw-bold"
                     onClick={handleLogout}
                     style={{ minWidth: '120px' }}
                   >

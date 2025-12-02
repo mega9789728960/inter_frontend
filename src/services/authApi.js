@@ -1,71 +1,85 @@
 const BASE_URL = 'https://inter-backend-pi.vercel.app';
 
+const makeRequest = async (endpoint, options = {}) => {
+  const { method = 'GET', headers = {}, body, token, errorMessage } = options;
+
+  const fetchOptions = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...headers,
+    },
+  };
+
+  if (token) {
+    fetchOptions.headers.Authorization = `Bearer ${token}`;
+  }
+
+  if (body) {
+    fetchOptions.body = JSON.stringify(body);
+  }
+
+  try {
+    const response = await fetch(`${BASE_URL}${endpoint}`, fetchOptions);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || errorMessage || 'Request failed');
+    }
+
+    return data;
+  } catch (error) {
+    throw error instanceof Error ? error : new Error('Network request failed');
+  }
+};
+
 export const authApi = {
-  async sendCode(email) {
-    const response = await fetch(`${BASE_URL}/send-code`, {
+  sendCode(email) {
+    return makeRequest('/send-code', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: { email },
+      errorMessage: 'Failed to send verification code',
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to send code');
-    return data;
   },
 
-  async verifyEmail(email, code, token) {
-    const response = await fetch(`${BASE_URL}/verify-email`, {
+  verifyEmail(email, code, token) {
+    return makeRequest('/verify-email', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, code, token }),
+      body: { email, code, token },
+      errorMessage: 'Invalid verification code',
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to verify email');
-    return data;
   },
 
-  async register(userData, token) {
-    const response = await fetch(`${BASE_URL}/register`, {
+  register(userData, token) {
+    return makeRequest('/register', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...userData, token }),
+      body: { ...userData, token },
+      errorMessage: 'Failed to create account',
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to register');
-    return data;
   },
 
-  async login(email, password) {
-    const response = await fetch(`${BASE_URL}/login`, {
+  login(email, password) {
+    return makeRequest('/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
+      body: { email, password },
+      errorMessage: 'Invalid email or password',
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to login');
-    return data;
   },
 
-  async getAccount(token) {
-    const response = await fetch(`${BASE_URL}/account`, {
+  getAccount(token) {
+    return makeRequest('/account', {
       method: 'GET',
-      headers: { 'Authorization': `Bearer ${token}` },
+      token,
+      errorMessage: 'Failed to load account information',
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to fetch account');
-    return data;
   },
 
-  async updateAccount(userData, token) {
-    const response = await fetch(`${BASE_URL}/account`, {
+  updateAccount(userData, token) {
+    return makeRequest('/account', {
       method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-      body: JSON.stringify(userData),
+      body: userData,
+      token,
+      errorMessage: 'Failed to update account',
     });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.message || 'Failed to update account');
-    return data;
   },
 };
